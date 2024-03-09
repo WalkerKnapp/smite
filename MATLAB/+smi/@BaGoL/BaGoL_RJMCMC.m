@@ -146,13 +146,21 @@ Z=Gibbs_Z(SMD,K,Mu_X,Mu_Y,Alpha_X,Alpha_Y);
 
 % Run Chain
 for nn=1:NChain+NBurnin
+    if mod(nn, 100) == 0
+        fprintf("%d\n", nn);
+    end
     %Get move type:
     JumpType=length(PMove)+1-sum(rand<cumsum(PMove));
-    K = length(Mu_X);
-    for ii = K:-1:1
 
-        % Don't allow removal if we are doing MCMC (no add/remove)
-        if sum(Z==ii)==0 && PMove(4)>0
+    K = length(Mu_X);
+
+    % Remove emitters with no localizations mapped to them
+    % Don't allow removal if we are doing MCMC (no add/remove)
+    if PMove(4) > 0
+        emitters_to_remove = setdiff(1:K, Z);
+        for jj = length(emitters_to_remove):-1:1
+            ii = emitters_to_remove(jj);
+
             Mu_X(ii)=[];
             Mu_Y(ii)=[];
             Alpha_X(ii)=[];
@@ -161,26 +169,26 @@ for nn=1:NChain+NBurnin
             Z(Z>ii) = Z(Z>ii) - 1;
         end 
     end
+
     switch JumpType
         case 1  %Move Mu, Alpha 
             Mu_XTest=Mu_X;
             Mu_YTest=Mu_Y;
             Alpha_XTest=Alpha_X;
             Alpha_YTest=Alpha_Y;
-            
-            for ID=1:K  
-                %Get new Mu and Alpha using Gibbs
-                if SigAlpha>0
-                   [Mu_XTest(ID),Alpha_XTest(ID)]=Gibbs_MuAlpha(ID,Z,SMD.X,SMD.FrameNum,SMD.X_SE,SigAlpha);
-                   [Mu_YTest(ID),Alpha_YTest(ID)]=Gibbs_MuAlpha(ID,Z,SMD.Y,SMD.FrameNum,SMD.Y_SE,SigAlpha);
-                else
-                   [Mu_XTest(ID)]=Gibbs_Mu(ID,Z,SMD.X,SMD.X_SE);
-                   [Mu_YTest(ID)]=Gibbs_Mu(ID,Z,SMD.Y,SMD.Y_SE);
-                end 
+
+            %Get new Mu and Alpha using Gibbs
+            if SigAlpha>0
+                for ID=1:K
+                    [Mu_XTest(ID),Alpha_XTest(ID)]=Gibbs_MuAlpha(ID,Z,SMD.X,SMD.FrameNum,SMD.X_SE,SigAlpha);
+                    [Mu_YTest(ID),Alpha_YTest(ID)]=Gibbs_MuAlpha(ID,Z,SMD.Y,SMD.FrameNum,SMD.Y_SE,SigAlpha);
+                end
+            else
+                [Mu_XTest, Mu_YTest] = Gibbs_Mu_Bulk(K, Z, SMD.X, SMD.Y, SMD.X_SE, SMD.Y_SE);
             end
             
-            Mu_X = Mu_XTest;
-            Mu_Y = Mu_YTest;
+            Mu_X = Mu_XTest';
+            Mu_Y = Mu_YTest';
             Alpha_X = Alpha_XTest;
             Alpha_Y = Alpha_YTest;
             
@@ -376,26 +384,37 @@ function [ZTest]=Gibbs_Z(SMD,K,Mu_X,Mu_Y,Alpha_X,Alpha_Y)
     
     T=SMD.FrameNum;
     N=length(T);
-  
-    X=repmat(SMD.X,size(Mu_X));
-    Y=repmat(SMD.Y,size(Mu_X));
-    T=repmat(T,size(Mu_X));
-    X_SE=repmat(SMD.X_SE,size(Mu_X));
-    Y_SE=repmat(SMD.Y_SE,size(Mu_X));
-    MUX=repmat(Mu_X,size(SMD.X));
-    MUY=repmat(Mu_Y,size(SMD.Y));
-    AX=repmat(Alpha_X,size(SMD.X));
-    AY=repmat(Alpha_Y,size(SMD.Y));
-    
-    PX=normpdf(X-(MUX+AX.*T),0,X_SE);
-    PY=normpdf(Y-(MUY+AY.*T),0,Y_SE);
-    P=PX.*PY+eps;
-    PNorm=P./repmat(sum(P,2),[1 K]);
+
+    %nm1 = SMD.X - (Mu_X + Alpha_X.*SMD.FrameNum);
+    %nm2 = SMD.Y - (Mu_Y + Alpha_Y.*SMD.FrameNum);
+
+    %PX=normpdf(nm1,0,SMD.X_SE);
+    %PY=normpdf(nm2,0,SMD.Y_SE);
+    %Pold=PX.*PY+eps;
+    %PNormOld=Pold./sum(Pold,2);
+
+    % Will not match rounding of old method, but this will be more precise.
+    %P = exp(-0.5 * ((nm1./SMD.X_SE).^2 + (nm2./SMD.Y_SE).^2));
+    %P = P./((SMD.X_SE.*SMD.Y_SE).*(2*pi)) + eps;
+
+    %P = normpdf2d( ...
+    %    SMD.X, SMD.Y, ...
+    %    Mu_X + Alpha_X.*SMD.FrameNum, Mu_Y + Alpha_Y.*SMD.FrameNum, ...
+    %    SMD.X_SE, SMD.Y_SE ...
+    %    ) + eps;
+    P = allocProbs(SMD, Mu_X, Mu_Y, Alpha_X, Alpha_Y) + eps;
 
     if sum(sum(isnan(P)))
        [ZTest] = knnsearch([Mu_X',Mu_Y'],[SMD.X,SMD.Y]); 
     else 
-        ZTest=K+1-sum(repmat(rand(N,1),[1,K])<(cumsum(PNorm,2)+eps),2);
+        rng = rand(N,1);
+        cs = (cumsum(P,2)./sum(P, 2))+eps;
+        stencil = rng < cs;
+        ZTest=K+1-sum(stencil,2);
+    end
+
+    if max(ZTest) > K
+        fprintf("wtf");
     end
 
 end
@@ -442,20 +461,45 @@ function [Mu,Alpha]=Gibbs_MuAlpha(ID,Z,X,T,Sigma,SigAlpha)
     
 end
 
+function [Mu_X, Mu_Y]=Gibbs_Mu_Bulk(N, Z, X, Y, Sigma_X, Sigma_Y)
+    Ax = accumarray(Z, X ./ (Sigma_X.^2), [N 1], @sum, single(-1));
+    Ay = accumarray(Z, Y ./ (Sigma_Y.^2), [N 1], @sum, single(-1));
+
+    Bx = accumarray(Z, Sigma_X.^-2, [N 1], @sum, single(-1));
+    By = accumarray(Z, Sigma_Y.^-2, [N, 1], @sum, single(-1));
+
+    XMLE = Ax./Bx;
+    YMLE = Ay./By;
+    X_SE = 1./sqrt(Bx);
+    Y_SE = 1./sqrt(By);
+
+    Mu_X = randn(size(XMLE), 'like', XMLE) .* X_SE + XMLE;
+    Mu_Y = randn(size(YMLE), 'like', YMLE) .* Y_SE + YMLE;
+
+    % Choose a random X,Y to act as Mu if there are no localizations for an
+    % emitter
+    no_locs = Ax==-1;
+    Mu_X(no_locs) = X(randi(length(Z), sum(no_locs)));
+    Mu_Y(no_locs) = Y(randi(length(Z), sum(no_locs)));
+end
+
 function [Mu]=Gibbs_Mu(ID,Z,X,Sigma)
     %This function calculates updated Mu (1D)
+
+    assigned_locs = Z==ID;
     
     %Get the localizations from the IDth emitter
-    if sum(Z==ID) == 0
+    if sum(assigned_locs) == 0
         Mu = X(randi(length(Z)));
     else
-        Xs=X(Z==ID);
-        Sigs = Sigma(Z==ID);
+        Xs=X(assigned_locs);
+        Sigs = Sigma(assigned_locs);
         A = sum(Xs./(Sigs.^2));
         B = sum(Sigs.^-2);
         XMLE = A/B;
         X_SE = 1/sqrt(B);
-        Mu=normrnd(XMLE,X_SE);
+        %Mu=normrnd(XMLE,X_SE);
+        Mu = randn(size(XMLE), 'like', XMLE) .* X_SE + XMLE;
     end
 end
 
@@ -472,20 +516,37 @@ end
 
 function LogL = p_Alloc(SMD,Mu_X,Mu_Y,Alpha_X,Alpha_Y,Ws)
 %This function calculated the probability of a given allocation set.
-    X=SMD.X;
-    Y=SMD.Y;
-    T = repmat(SMD.FrameNum,[1,length(Mu_X)]);
-    SigmaX=SMD.X_SE;
-    SigmaY=SMD.Y_SE;
-    
-    Lx = length(X);
-    Lmu = length(Mu_X);
-    LogL = log(sum(repmat(Ws,[Lx,1]).*normpdf(repmat(X,[1,Lmu]),...
-            repmat(Mu_X,[Lx,1])+repmat(Alpha_X,[Lx,1]).*T,...
-            repmat(SigmaX,[1,Lmu])).*normpdf(repmat(Y,[1,Lmu]),...
-            repmat(Mu_Y,[Lx,1])+repmat(Alpha_Y,[Lx,1]).*T,...
-            repmat(SigmaY,[1,Lmu])),2));
-   
+    %pdfs = Ws.*normpdf2d( ...
+    %    SMD.X, SMD.Y, ...
+    %    Mu_X + Alpha_X.*SMD.FrameNum, Mu_Y + Alpha_Y.*SMD.FrameNum, ...
+    %    SMD.X_SE, SMD.Y_SE ...
+    %    );
+    pdfs = Ws.*allocProbs(SMD, Mu_X, Mu_Y, Alpha_X, Alpha_Y);
+
+    LogL = log(sum(pdfs, 2));
     LogL = sum(LogL);
     
+end
+
+function P = allocProbs(SMD, Mu_X, Mu_Y, Alpha_X, Alpha_Y)
+    Xgpu = gpuArray(SMD.X);
+    Ygpu = gpuArray(SMD.Y);
+    XSEgpu = gpuArray(SMD.X_SE);
+    YSEgpu = gpuArray(SMD.Y_SE);
+    Tgpu = gpuArray(SMD.FrameNum);
+    MUXgpu = gpuArray(Mu_X);
+    MUYgpu = gpuArray(Mu_Y);
+    AXgpu = gpuArray(Alpha_X);
+    AYgpu = gpuArray(Alpha_Y);
+    
+    Pgpu = normpdf2d(Xgpu, Ygpu, MUXgpu + AXgpu.*Tgpu, MUYgpu + AYgpu.*Tgpu, XSEgpu, YSEgpu);
+    P = gather(Pgpu);
+end
+
+function P = normpdf2d(X, Y, Mu_X, Mu_Y, Sigma_X, Sigma_Y)
+    % Based on the matlab mvnpdf implementation
+
+    quadform = ((X - Mu_X) ./ Sigma_X).^2 + ((Y - Mu_Y) ./ Sigma_Y).^2;
+
+    P = exp(-0.5*quadform - log(2*pi)) ./ (Sigma_X .* Sigma_Y);
 end
