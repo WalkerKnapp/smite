@@ -412,11 +412,6 @@ function [ZTest]=Gibbs_Z(SMD,K,Mu_X,Mu_Y,Alpha_X,Alpha_Y)
         stencil = rng < cs;
         ZTest=K+1-sum(stencil,2);
     end
-
-    if max(ZTest) > K
-        fprintf("wtf");
-    end
-
 end
 
 function [Mu,Alpha]=Gibbs_MuAlpha(ID,Z,X,T,Sigma,SigAlpha)
@@ -481,26 +476,6 @@ function [Mu_X, Mu_Y]=Gibbs_Mu_Bulk(N, Z, X, Y, Sigma_X, Sigma_Y)
     no_locs = Ax==-1;
     Mu_X(no_locs) = X(randi(length(Z), sum(no_locs)));
     Mu_Y(no_locs) = Y(randi(length(Z), sum(no_locs)));
-end
-
-function [Mu]=Gibbs_Mu(ID,Z,X,Sigma)
-    %This function calculates updated Mu (1D)
-
-    assigned_locs = Z==ID;
-    
-    %Get the localizations from the IDth emitter
-    if sum(assigned_locs) == 0
-        Mu = X(randi(length(Z)));
-    else
-        Xs=X(assigned_locs);
-        Sigs = Sigma(assigned_locs);
-        A = sum(Xs./(Sigs.^2));
-        B = sum(Sigs.^-2);
-        XMLE = A/B;
-        X_SE = 1/sqrt(B);
-        %Mu=normrnd(XMLE,X_SE);
-        Mu = randn(size(XMLE), 'like', XMLE) .* X_SE + XMLE;
-    end
 end
 
 function [Alpha,Center] = calAlpha(Xs,Sigs,Frames,SigAlpha)
