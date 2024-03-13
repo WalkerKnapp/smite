@@ -75,12 +75,13 @@
 Results_BaGoL = 'Results_BaGoLHier';
 
 % Generic parameters.
-BaGoLParams.ImageSize = 256;        % (pixel)
-%BaGoLParams.PixelSize = 108.018;    % camera back projected size (nm) [TIRF]
-BaGoLParams.PixelSize = 97.8;       % (nm) [sequential]
-BaGoLParams.OutputPixelSize = 4;    %2; % pixel size for posterior images (nm)
-BaGoLParams.N_Burnin = 32000;       % Length of Burn-in chain
-BaGoLParams.N_Trials = 8000;        % Length of post-burn-in chain
+BaGoLParams.ImageSize = 100;        % (pixel)
+%BaGoLParams.PixelSize = 0.5;    % camera back projected size (nm) [TIRF]
+%BaGoLParams.PixelSize = 97.8;       % (nm) [sequential]
+BaGoLParams.PixelSize = 0.5;
+BaGoLParams.OutputPixelSize = 0.1;    %2; % pixel size for posterior images (nm)
+BaGoLParams.N_Burnin = 20000;       % Length of Burn-in chain
+BaGoLParams.N_Trials = 10000;        % Length of post-burn-in chain
 %BaGoLParams.N_Burnin = 8000;        % Length of Burn-in chain
 %BaGoLParams.N_Trials = 2000;        % Length of post-burn-in chain
 BaGoLParams.NSamples = 10;          % Number of samples before sampling Xi
@@ -98,15 +99,15 @@ BaGoLParams.Y_Adjust = [];
 % data, SE_Adjust = 1--2 nm, while for dSTORM, slightly bigger values should
 % be used.  Note that this quantity can be specified as an array of length
 % n_files if applied differently to each file.
-BaGoLParams.SE_Adjust = 0;          % Precision inflation applied to SE (nm)
+BaGoLParams.SE_Adjust = 0.4;          % Precision inflation applied to SE (nm)
 %BaGoLParams.SE_Adjust = [0, 0];     % Precision inflation applied to SE (nm)
 
 % The values for ROIsz and OverLap directly below are good overall for much
 % data, but note that the larger the ROIsz, the more the computational effort.
 % Artifacts in dense data can come about if the ROIsz is too large.  The
 % pre-clustering cutoff should be around the localization precision.
-BaGoLParams.ROIsz = 500;            % ROI size for RJMCMC (nm)
-BaGoLParams.OverLap = 50;           % Size of overlapping region (nm)
+BaGoLParams.ROIsz = 100;            % ROI size for RJMCMC (nm)
+BaGoLParams.OverLap = 0;           % Size of overlapping region (nm)
 BaGoLParams.Cutoff = 25;            % Pre-clustering cutoff (nm)
 %BaGoLParams.ROIsz = 100;            % ROI size for RJMCMC (nm)
 %BaGoLParams.OverLap = 25;           % Size of overlapping region (nm)
@@ -116,7 +117,9 @@ BaGoLParams.Cutoff = 25;            % Pre-clustering cutoff (nm)
 % k and theta below are the shape and scale parameters for the Gamma
 % probability distribution function.  If just one parameter is provided,
 % a Poisson distribution is used.
-BaGoLParams.Xi = [20, 1];           % [k, theta] parameters for gamma prior
+BaGoLParams.Xi = [60, 1];           % [k, theta] parameters for gamma prior
+
+BaGoLParams.NSamples = 20;
 
 % Note for batch runs, in which Files and DataROI are input by hand, please see
 % ### comments below.
@@ -145,7 +148,7 @@ includeROIs = [];
 % ### with fullfile.
 D1 = '../DATA';
 Files = {
-fullfile(D1, 'Cell_02_Label_01_Results.mat');
+fullfile(D1, 'SMD_DNA-Origami_MPI.mat');
 };
 %fullfile(D1, 'Cell_03_Label_01_Results.mat');
 

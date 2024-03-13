@@ -139,6 +139,9 @@ end
 %   SMD.Y = Y_Adjust - SMD.Y; 
 %end
 
+SMD.X = SMD.X - min(SMD.X(:));
+SMD.Y = SMD.Y - min(SMD.Y(:));
+
 % Eliminate trailing _Results* from the FileName for saving results.
 FileName = regexprep(FileNameIn, '\.mat$', '');
 FileName = regexprep(FileName, '_Results$', '');
@@ -336,7 +339,7 @@ end
 % Therefore, the true scale bar length for these BaGoL plots will be simply
 % ScaleBarLength (as the conversion to output pixels is done properly in
 % scalebar.m).  ScaleBarLength defaults to 0.5 um = 500 nm (see line below).
-ScaleBarLength = 500;   % nm
+ScaleBarLength = 20;   % nm
 fprintf('ScaleBarLength = %g nm, OutputPixelSize = %g nm\n', ...
         ScaleBarLength, BaGoLParams.OutputPixelSize);
 
